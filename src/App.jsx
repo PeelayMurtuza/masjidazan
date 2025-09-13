@@ -12,9 +12,9 @@ export default function App() {
 
   const audioRef = useRef(null);
   const peerRef = useRef(null);
+  const bc = useRef(new BroadcastChannel("azan-notify"));
 
   const MUAZZIN_SECRET = "1234"; // Muazzin secret password
-  const bc = useRef(new BroadcastChannel("azan-notify"));
 
   // Check localStorage for listener
   useEffect(() => {
@@ -26,11 +26,9 @@ export default function App() {
       setStatus("✅ Previously verified! Waiting for broadcast...");
     }
 
-    // Listen to broadcast notifications
     bc.current.onmessage = (event) => {
       if (event.data.type === "AZAN_START" && authorizedListener) {
         const key = event.data.key;
-        // Match one-time key
         if (listenerKey === key || localStorage.getItem("broadcastKey") === key) {
           setStatus("🔔 Azan starting! Connecting...");
           startListeningAuto(key);
@@ -39,6 +37,14 @@ export default function App() {
         }
       }
     };
+
+    // Service worker registration
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/service-worker.js")
+        .then((reg) => console.log("SW registered:", reg.scope))
+        .catch((err) => console.log("SW failed:", err));
+    }
   }, [authorizedListener, listenerKey]);
 
   // Verify Muazzin
@@ -52,25 +58,21 @@ export default function App() {
     }
   };
 
-  // Start Broadcast and generate one-time key
+  // Start Broadcast
   const startBroadcast = async () => {
     if (!authorizedMuazzin) return alert("Enter Muazzin key first!");
 
     setMode("broadcast");
 
-    // Generate random one-time key
     const oneTimeKey = Math.floor(100000 + Math.random() * 900000).toString();
     setBroadcastKey(oneTimeKey);
     setStatus(`Broadcasting started! Share this key with listeners: ${oneTimeKey}`);
 
-    // Notify all listeners
     bc.current.postMessage({ type: "AZAN_START", key: oneTimeKey });
 
-    peerRef.current = new Peer(oneTimeKey); // use key as Peer ID
+    peerRef.current = new Peer(oneTimeKey);
 
-    peerRef.current.on("open", () => {
-      console.log("Broadcasting with ID/key:", oneTimeKey);
-    });
+    peerRef.current.on("open", () => console.log("Broadcasting with ID/key:", oneTimeKey));
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -84,7 +86,7 @@ export default function App() {
     }
   };
 
-  // Verify Listener Key (one-time)
+  // Verify Listener Key
   const verifyListenerKey = () => {
     if (!listenerKey) return alert("Enter the broadcast key!");
     setAuthorizedListener(true);
@@ -93,7 +95,7 @@ export default function App() {
     setStatus("✅ Key verified! Waiting for broadcast...");
   };
 
-  // Auto-connect when broadcast starts
+  // Auto-connect
   const startListeningAuto = (key) => {
     setMode("listen");
     peerRef.current = new Peer();
@@ -119,7 +121,6 @@ export default function App() {
       {!mode && (
         <div className="space-y-6 w-full max-w-xs">
 
-          {/* Muazzin Auth */}
           {!authorizedMuazzin && (
             <div className="flex flex-col space-y-2">
               <input
@@ -138,7 +139,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Start Broadcast */}
           {authorizedMuazzin && (
             <button
               onClick={startBroadcast}
@@ -148,7 +148,6 @@ export default function App() {
             </button>
           )}
 
-          {/* Listener Key Input */}
           {!authorizedListener && (
             <div className="flex flex-col space-y-2">
               <input
@@ -166,11 +165,9 @@ export default function App() {
               </button>
             </div>
           )}
-
         </div>
       )}
 
-      {/* Broadcast Mode */}
       {mode === "broadcast" && (
         <div className="mt-6">
           <p className="mb-2">
@@ -179,7 +176,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Listen Mode */}
       {mode === "listen" && (
         <div className="mt-6 flex flex-col items-center space-y-4">
           <audio ref={audioRef} autoPlay controls className="mt-4 w-64 rounded" />
