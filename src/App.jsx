@@ -6,18 +6,20 @@ export default function App() {
   const [status, setStatus] = useState("Idle...");
   const [authKey, setAuthKey] = useState("");
   const [authorized, setAuthorized] = useState(false);
-  const [broadcastID, setBroadcastID] = useState("");
+  const [listenerKey, setListenerKey] = useState("");
   const [listenerAuthorized, setListenerAuthorized] = useState(false);
+  const [broadcasting, setBroadcasting] = useState(false);
 
   const audioRef = useRef(null);
   const peerRef = useRef(null);
   const streamRef = useRef(null);
-
-  const FIXED_BROADCAST_ID = "azan-broadcast-001"; // Static broadcast ID
-  const MUAZZIN_KEY = "1234"; // Muazzin password
-
   const bc = useRef(new BroadcastChannel("azan-notify"));
 
+  const FIXED_BROADCAST_ID = "azan-broadcast-001";
+  const MUAZZIN_KEY = "1234"; // Muazzin key
+  const LISTENER_KEY = "5678"; // Listener key
+
+  // Service worker registration & listen for Azan start
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker
@@ -26,16 +28,10 @@ export default function App() {
         .catch((err) => console.log("SW failed:", err));
     }
 
-    // Listen for broadcast start
     bc.current.onmessage = (event) => {
       if (event.data === "AZAN_START" && listenerAuthorized) {
         setStatus("🔔 Azan is starting! Connecting...");
         startListeningAuto();
-      }
-      if (event.data === "AZAN_STOP" && listenerAuthorized) {
-        setStatus("⏹️ Azan stopped.");
-        if (audioRef.current) audioRef.current.pause();
-        setMode(null);
       }
     };
   }, [listenerAuthorized]);
@@ -51,27 +47,34 @@ export default function App() {
     }
   };
 
-  // Verify Listener (by static broadcast ID)
-  const verifyListener = () => {
-    if (broadcastID === FIXED_BROADCAST_ID) {
+  // Verify Listener Key
+  const verifyListenerKey = () => {
+    if (listenerKey === LISTENER_KEY) {
       setListenerAuthorized(true);
+      setStatus("✅ Authorized. You will auto-connect when Azan starts.");
       localStorage.setItem("listenerAuthorized", "true");
-      setStatus("✅ Verified! Will auto-connect when Azan starts.");
+      localStorage.setItem("listenerKey", listenerKey);
     } else {
-      alert("❌ Wrong Broadcast ID!");
-      setBroadcastID("");
+      alert("❌ Wrong Listener key!");
+      setListenerKey("");
     }
   };
 
-  // Start Broadcast
+  // Start Broadcasting
   const startBroadcast = async () => {
     if (!authorized) return alert("Enter Muazzin key first!");
     setMode("broadcast");
+    setBroadcasting(true);
     setStatus("📡 Broadcasting...");
 
+    // Notify all listeners
     bc.current.postMessage("AZAN_START");
 
-    peerRef.current = new Peer(FIXED_BROADCAST_ID);
+    peerRef.current = new Peer(FIXED_BROADCAST_ID, {
+      host: "peerjs-server.herokuapp.com",
+      secure: true,
+      port: 443,
+    });
 
     peerRef.current.on("open", () =>
       console.log("Broadcasting with ID:", FIXED_BROADCAST_ID)
@@ -82,7 +85,7 @@ export default function App() {
       streamRef.current = stream;
 
       peerRef.current.on("call", (call) => {
-        call.answer(stream);
+        call.answer(stream); // send Muazzin audio
         setStatus("✅ Listener connected!");
       });
     } catch (err) {
@@ -91,18 +94,17 @@ export default function App() {
     }
   };
 
-  // Stop Broadcast
+  // Stop broadcasting
   const stopBroadcast = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-    }
     if (peerRef.current) {
       peerRef.current.destroy();
-      peerRef.current = null;
+      setBroadcasting(false);
+      setMode(null);
+      setStatus("📴 Broadcast stopped.");
     }
-    setMode(null);
-    setStatus("⏹️ Broadcast stopped.");
-    bc.current.postMessage("AZAN_STOP");
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+    }
   };
 
   // Listener auto-connect
@@ -111,14 +113,12 @@ export default function App() {
     peerRef.current = new Peer();
 
     peerRef.current.on("open", () => {
-      const call = peerRef.current.call(FIXED_BROADCAST_ID, null);
+      const call = peerRef.current.call(FIXED_BROADCAST_ID, new MediaStream());
       call.on("stream", (remoteStream) => {
         if (audioRef.current) {
           audioRef.current.srcObject = remoteStream;
           audioRef.current.play().catch(() => {
-            setStatus(
-              "🔔 Azan started! Tap play if audio blocked by browser."
-            );
+            setStatus("🔔 Tap play if audio blocked by browser.");
           });
         }
         setStatus("✅ Connected, playing Azan...");
@@ -132,7 +132,7 @@ export default function App() {
 
       {!mode && (
         <div className="space-y-6 w-full max-w-xs">
-          {/* Muazzin Auth */}
+          {/* Muazzin auth */}
           {!authorized && (
             <div className="flex flex-col space-y-2">
               <input
@@ -151,50 +151,50 @@ export default function App() {
             </div>
           )}
 
-          {/* Broadcast Buttons */}
-          {authorized && (
-            <>
-              <button
-                onClick={startBroadcast}
-                className="w-full bg-green-500 px-6 py-3 rounded-lg shadow-lg hover:bg-green-600"
-              >
-                Start Broadcast (Masjid)
-              </button>
-              <button
-                onClick={stopBroadcast}
-                className="w-full bg-red-500 px-6 py-3 rounded-lg shadow-lg hover:bg-red-600 mt-2"
-              >
-                Stop Broadcast
-              </button>
-            </>
+          {/* Broadcast / Stop */}
+          {authorized && !broadcasting && (
+            <button
+              onClick={startBroadcast}
+              className="w-full bg-green-500 px-6 py-3 rounded-lg shadow-lg hover:bg-green-600"
+            >
+              Start Broadcast (Masjid)
+            </button>
+          )}
+          {broadcasting && (
+            <button
+              onClick={stopBroadcast}
+              className="w-full bg-red-500 px-6 py-3 rounded-lg shadow-lg hover:bg-red-600"
+            >
+              Stop Broadcast
+            </button>
           )}
 
-          {/* Listener Verification */}
+          {/* Listener auth */}
           {!listenerAuthorized && (
             <div className="flex flex-col space-y-2">
               <input
-                type="text"
-                placeholder='Enter Broadcast ID: "azan-broadcast-001"'
-                value={broadcastID}
-                onChange={(e) => setBroadcastID(e.target.value)}
+                type="password"
+                placeholder="Enter Listener Key"
+                value={listenerKey}
+                onChange={(e) => setListenerKey(e.target.value)}
                 className="px-4 py-2 rounded text-black text-center"
               />
               <button
-                onClick={verifyListener}
+                onClick={verifyListenerKey}
                 className="bg-blue-500 px-4 py-2 rounded hover:bg-blue-600"
               >
-                Verify Broadcast ID
+                Verify Listener Key
               </button>
             </div>
           )}
 
-          {/* Manual Start Listening (optional) */}
+          {/* Manual Listener Start */}
           {listenerAuthorized && !mode && (
             <button
               onClick={startListeningAuto}
               className="w-full bg-blue-500 px-6 py-3 rounded-lg shadow-lg hover:bg-blue-600"
             >
-              Start Listening
+              Start Listening (Home)
             </button>
           )}
         </div>
@@ -204,7 +204,7 @@ export default function App() {
       {mode === "broadcast" && (
         <div className="mt-6">
           <p className="mb-2">
-            📡 Broadcasting with static ID: {FIXED_BROADCAST_ID}
+            📡 Broadcasting with ID: {FIXED_BROADCAST_ID}
           </p>
         </div>
       )}
@@ -212,7 +212,12 @@ export default function App() {
       {/* Listen Mode */}
       {mode === "listen" && (
         <div className="mt-6 flex flex-col items-center space-y-4">
-          <audio ref={audioRef} autoPlay controls className="mt-4 w-64 rounded" />
+          <audio
+            ref={audioRef}
+            autoPlay
+            controls
+            className="mt-4 w-64 rounded"
+          />
         </div>
       )}
 
