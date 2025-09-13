@@ -1,16 +1,22 @@
 const CACHE_NAME = "azan-pwa-cache-v1";
 const urlsToCache = [
-  "./",
-  "./index.html",
-  "./manifest.json",
-  "./favicon.ico",
+  "/",               // root
+  "/index.html",     // index
+  "/manifest.json",  // manifest
+  "/favicon.ico"     // favicon (check if exists)
 ];
 
 // Install
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(urlsToCache);
+    caches.open(CACHE_NAME).then(async (cache) => {
+      for (const url of urlsToCache) {
+        try {
+          await cache.add(url);
+        } catch (err) {
+          console.warn("Failed to cache:", url, err);
+        }
+      }
     })
   );
   self.skipWaiting();
