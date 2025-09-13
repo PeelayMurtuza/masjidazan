@@ -1,7 +1,7 @@
 {
   "name": "Azan Live PWA",
   "short_name": "AzanPWA",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#1f2937",
   "theme_color": "#4f46e5",
