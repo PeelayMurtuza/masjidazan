@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import Peer from "peerjs";
 
 export default function App() {
-  const [mode, setMode] = useState(null); // broadcast / listen
+  const [mode, setMode] = useState(null); // "broadcast" or "listen"
   const [status, setStatus] = useState("Idle...");
   const [authKey, setAuthKey] = useState("");
   const [authorized, setAuthorized] = useState(false);
@@ -13,14 +13,24 @@ export default function App() {
   const audioRef = useRef(null);
   const peerRef = useRef(null);
   const streamRef = useRef(null);
-  const bc = useRef(new BroadcastChannel("azan-notify"));
 
   const FIXED_BROADCAST_ID = "azan-broadcast-001";
   const MUAZZIN_KEY = "1234"; // Muazzin key
   const LISTENER_KEY = "5678"; // Listener key
 
-  // Service worker registration & listen for Azan start
+  const bc = useRef(new BroadcastChannel("azan-notify"));
+
+  // Initialize listener state from localStorage
   useEffect(() => {
+    const savedListener = localStorage.getItem("listenerAuthorized");
+    const savedKey = localStorage.getItem("listenerKey");
+    if (savedListener && savedKey) {
+      setListenerAuthorized(true);
+      setListenerKey(savedKey);
+      setStatus("✅ Previously verified! Waiting for Azan...");
+    }
+
+    // Service worker registration
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker
         .register("/service-worker.js")
@@ -28,10 +38,16 @@ export default function App() {
         .catch((err) => console.log("SW failed:", err));
     }
 
+    // Listen for Azan broadcast
     bc.current.onmessage = (event) => {
       if (event.data === "AZAN_START" && listenerAuthorized) {
-        setStatus("🔔 Azan is starting! Connecting...");
+        setStatus("🔔 Azan starting! Connecting...");
         startListeningAuto();
+      }
+      if (event.data === "AZAN_STOP") {
+        setStatus("📴 Azan broadcast stopped");
+        if (audioRef.current) audioRef.current.pause();
+        setMode(null);
       }
     };
   }, [listenerAuthorized]);
@@ -47,11 +63,11 @@ export default function App() {
     }
   };
 
-  // Verify Listener Key
+  // Verify Listener
   const verifyListenerKey = () => {
     if (listenerKey === LISTENER_KEY) {
       setListenerAuthorized(true);
-      setStatus("✅ Authorized. You will auto-connect when Azan starts.");
+      setStatus("✅ Key verified! You will auto-connect when Azan starts.");
       localStorage.setItem("listenerAuthorized", "true");
       localStorage.setItem("listenerKey", listenerKey);
     } else {
@@ -60,14 +76,14 @@ export default function App() {
     }
   };
 
-  // Start Broadcasting
+  // Start broadcasting
   const startBroadcast = async () => {
     if (!authorized) return alert("Enter Muazzin key first!");
     setMode("broadcast");
     setBroadcasting(true);
     setStatus("📡 Broadcasting...");
 
-    // Notify all listeners
+    // Notify listeners
     bc.current.postMessage("AZAN_START");
 
     peerRef.current = new Peer(FIXED_BROADCAST_ID, {
@@ -85,7 +101,7 @@ export default function App() {
       streamRef.current = stream;
 
       peerRef.current.on("call", (call) => {
-        call.answer(stream); // send Muazzin audio
+        call.answer(stream);
         setStatus("✅ Listener connected!");
       });
     } catch (err) {
@@ -100,11 +116,12 @@ export default function App() {
       peerRef.current.destroy();
       setBroadcasting(false);
       setMode(null);
-      setStatus("📴 Broadcast stopped.");
+      setStatus("📴 Broadcast stopped");
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
     }
+    bc.current.postMessage("AZAN_STOP");
   };
 
   // Listener auto-connect
@@ -140,7 +157,7 @@ export default function App() {
                 placeholder="Enter Muazzin Key"
                 value={authKey}
                 onChange={(e) => setAuthKey(e.target.value)}
-                className="px-4 py-2 rounded text-black text-center"
+                className="px-4 py-2 rounded border-white text-white text-center"
               />
               <button
                 onClick={verifyMuazzinKey}
@@ -177,7 +194,7 @@ export default function App() {
                 placeholder="Enter Listener Key"
                 value={listenerKey}
                 onChange={(e) => setListenerKey(e.target.value)}
-                className="px-4 py-2 rounded text-black text-center"
+                className="px-4 py-2 rounded border-white text-white text-center"
               />
               <button
                 onClick={verifyListenerKey}
