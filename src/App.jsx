@@ -6,20 +6,18 @@ export default function App() {
   const [status, setStatus] = useState("Idle...");
   const [authKey, setAuthKey] = useState("");
   const [authorized, setAuthorized] = useState(false);
-  const [listenerKey, setListenerKey] = useState("");
+  const [broadcastID, setBroadcastID] = useState("");
   const [listenerAuthorized, setListenerAuthorized] = useState(false);
 
   const audioRef = useRef(null);
   const peerRef = useRef(null);
   const streamRef = useRef(null);
 
-  const FIXED_BROADCAST_ID = "azan-broadcast-001"; // Static ID
+  const FIXED_BROADCAST_ID = "azan-broadcast-001"; // Static broadcast ID
   const MUAZZIN_KEY = "1234"; // Muazzin password
-  const LISTENER_KEY = "5678"; // Listener password
 
   const bc = useRef(new BroadcastChannel("azan-notify"));
 
-  // Register service worker and listen to notifications
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker
@@ -28,7 +26,7 @@ export default function App() {
         .catch((err) => console.log("SW failed:", err));
     }
 
-    // Auto-connect listener on broadcast start
+    // Listen for broadcast start
     bc.current.onmessage = (event) => {
       if (event.data === "AZAN_START" && listenerAuthorized) {
         setStatus("🔔 Azan is starting! Connecting...");
@@ -53,15 +51,15 @@ export default function App() {
     }
   };
 
-  // Verify Listener Key
-  const verifyListenerKey = () => {
-    if (listenerKey === LISTENER_KEY) {
+  // Verify Listener (by static broadcast ID)
+  const verifyListener = () => {
+    if (broadcastID === FIXED_BROADCAST_ID) {
       setListenerAuthorized(true);
       localStorage.setItem("listenerAuthorized", "true");
       setStatus("✅ Verified! Will auto-connect when Azan starts.");
     } else {
-      alert("❌ Wrong Listener key!");
-      setListenerKey("");
+      alert("❌ Wrong Broadcast ID!");
+      setBroadcastID("");
     }
   };
 
@@ -82,6 +80,7 @@ export default function App() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+
       peerRef.current.on("call", (call) => {
         call.answer(stream);
         setStatus("✅ Listener connected!");
@@ -152,41 +151,39 @@ export default function App() {
             </div>
           )}
 
-          {/* Broadcast Button */}
+          {/* Broadcast Buttons */}
           {authorized && (
-            <button
-              onClick={startBroadcast}
-              className="w-full bg-green-500 px-6 py-3 rounded-lg shadow-lg hover:bg-green-600"
-            >
-              Start Broadcast (Masjid)
-            </button>
+            <>
+              <button
+                onClick={startBroadcast}
+                className="w-full bg-green-500 px-6 py-3 rounded-lg shadow-lg hover:bg-green-600"
+              >
+                Start Broadcast (Masjid)
+              </button>
+              <button
+                onClick={stopBroadcast}
+                className="w-full bg-red-500 px-6 py-3 rounded-lg shadow-lg hover:bg-red-600 mt-2"
+              >
+                Stop Broadcast
+              </button>
+            </>
           )}
 
-          {/* Stop Button */}
-          {authorized && mode === "broadcast" && (
-            <button
-              onClick={stopBroadcast}
-              className="w-full bg-red-500 px-6 py-3 rounded-lg shadow-lg hover:bg-red-600 mt-2"
-            >
-              Stop Broadcast
-            </button>
-          )}
-
-          {/* Listener Auth */}
+          {/* Listener Verification */}
           {!listenerAuthorized && (
             <div className="flex flex-col space-y-2">
               <input
-                type="password"
-                placeholder="Enter Listener Key"
-                value={listenerKey}
-                onChange={(e) => setListenerKey(e.target.value)}
+                type="text"
+                placeholder='Enter Broadcast ID: "azan-broadcast-001"'
+                value={broadcastID}
+                onChange={(e) => setBroadcastID(e.target.value)}
                 className="px-4 py-2 rounded text-black text-center"
               />
               <button
-                onClick={verifyListenerKey}
+                onClick={verifyListener}
                 className="bg-blue-500 px-4 py-2 rounded hover:bg-blue-600"
               >
-                Verify Listener Key
+                Verify Broadcast ID
               </button>
             </div>
           )}
@@ -197,7 +194,7 @@ export default function App() {
               onClick={startListeningAuto}
               className="w-full bg-blue-500 px-6 py-3 rounded-lg shadow-lg hover:bg-blue-600"
             >
-              Start Listening (Home)
+              Start Listening
             </button>
           )}
         </div>
