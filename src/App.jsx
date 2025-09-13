@@ -6,7 +6,7 @@ export default function App() {
   const [status, setStatus] = useState("Idle...");
   const [muazzinKey, setMuazzinKey] = useState(""); // Muazzin auth input
   const [authorizedMuazzin, setAuthorizedMuazzin] = useState(false);
-  const [broadcastKey, setBroadcastKey] = useState(""); // one-time key
+  const [broadcastKey, setBroadcastKey] = useState(""); // persistent key
   const [listenerKey, setListenerKey] = useState(""); // listener input
   const [authorizedListener, setAuthorizedListener] = useState(false);
 
@@ -16,20 +16,24 @@ export default function App() {
 
   const MUAZZIN_SECRET = "1234"; // Muazzin secret password
 
-  // Check localStorage for listener
+  // Initialize keys from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("authorizedListener");
     const savedKey = localStorage.getItem("broadcastKey");
-    if (saved && savedKey) {
-      setListenerKey(savedKey);
+    if (savedKey) setBroadcastKey(savedKey);
+
+    const listenerSaved = localStorage.getItem("authorizedListener");
+    if (listenerSaved) {
+      const savedListenerKey = localStorage.getItem("listenerKey");
+      setListenerKey(savedListenerKey);
       setAuthorizedListener(true);
       setStatus("✅ Previously verified! Waiting for broadcast...");
     }
 
+    // Listen for Azan start notifications
     bc.current.onmessage = (event) => {
       if (event.data.type === "AZAN_START" && authorizedListener) {
         const key = event.data.key;
-        if (listenerKey === key || localStorage.getItem("broadcastKey") === key) {
+        if (listenerKey === key) {
           setStatus("🔔 Azan starting! Connecting...");
           startListeningAuto(key);
         } else {
@@ -52,6 +56,12 @@ export default function App() {
     if (muazzinKey === MUAZZIN_SECRET) {
       setAuthorizedMuazzin(true);
       setStatus("✅ Authorized. You can start broadcasting now.");
+      // Generate persistent broadcast key if not exists
+      if (!broadcastKey) {
+        const key = Math.floor(100000 + Math.random() * 900000).toString();
+        setBroadcastKey(key);
+        localStorage.setItem("broadcastKey", key);
+      }
     } else {
       alert("❌ Wrong Muazzin key!");
       setMuazzinKey("");
@@ -61,24 +71,21 @@ export default function App() {
   // Start Broadcast
   const startBroadcast = async () => {
     if (!authorizedMuazzin) return alert("Enter Muazzin key first!");
-
     setMode("broadcast");
+    setStatus(`📡 Broadcasting with key: ${broadcastKey}`);
 
-    const oneTimeKey = Math.floor(100000 + Math.random() * 900000).toString();
-    setBroadcastKey(oneTimeKey);
-    setStatus(`Broadcasting started! Share this key with listeners: ${oneTimeKey}`);
+    // Notify listeners
+    bc.current.postMessage({ type: "AZAN_START", key: broadcastKey });
 
-    bc.current.postMessage({ type: "AZAN_START", key: oneTimeKey });
+    peerRef.current = new Peer(broadcastKey);
 
-    peerRef.current = new Peer(oneTimeKey);
-
-    peerRef.current.on("open", () => console.log("Broadcasting with ID/key:", oneTimeKey));
+    peerRef.current.on("open", () => console.log("Broadcasting with ID/key:", broadcastKey));
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       peerRef.current.on("call", (call) => {
         call.answer(stream);
-        setStatus("Listener connected!");
+        setStatus("✅ Listener connected!");
       });
     } catch (err) {
       console.error(err);
@@ -86,16 +93,16 @@ export default function App() {
     }
   };
 
-  // Verify Listener Key
+  // Verify Listener Key (one-time)
   const verifyListenerKey = () => {
-    if (!listenerKey) return alert("Enter the broadcast key!");
+    if (listenerKey !== broadcastKey) return alert("❌ Incorrect broadcast key!");
     setAuthorizedListener(true);
     localStorage.setItem("authorizedListener", "true");
-    localStorage.setItem("broadcastKey", listenerKey);
+    localStorage.setItem("listenerKey", listenerKey);
     setStatus("✅ Key verified! Waiting for broadcast...");
   };
 
-  // Auto-connect
+  // Auto-connect listener when Azan starts
   const startListeningAuto = (key) => {
     setMode("listen");
     peerRef.current = new Peer();
@@ -148,7 +155,7 @@ export default function App() {
             </button>
           )}
 
-          {!authorizedListener && (
+          {!authorizedListener && broadcastKey && (
             <div className="flex flex-col space-y-2">
               <input
                 type="text"
@@ -170,9 +177,7 @@ export default function App() {
 
       {mode === "broadcast" && (
         <div className="mt-6">
-          <p className="mb-2">
-            📡 Broadcasting! Share this key with listeners: {broadcastKey}
-          </p>
+          <p className="mb-2">📡 Broadcasting with key: {broadcastKey}</p>
         </div>
       )}
 
