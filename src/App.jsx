@@ -87,10 +87,11 @@ export default function App() {
     bc.current.postMessage("AZAN_START");
 
     peerRef.current = new Peer(FIXED_BROADCAST_ID, {
-      host: "peerjs-server.herokuapp.com",
+      host: "0.peerjs.com",
       secure: true,
-      port: 443,
+      port: 443
     });
+
 
     peerRef.current.on("open", () =>
       console.log("Broadcasting with ID:", FIXED_BROADCAST_ID)
